@@ -31,14 +31,12 @@ export function Particles({ count = 500, animationPhase }: ParticlesProps) {
     return { positions: pos, colors: col };
   }, [count]);
 
-  const velocities = useRef(
-    new Float32Array(
-      Array.from({ length: count }, () => ({
-        x: (Math.random() - 0.5) * 0.1,
-        y: -Math.random() * 0.15 - 0.05, // downward
-        z: (Math.random() - 0.5) * 0.02,
-      }))
-    )
+  const velocities = useRef<Array<{ x: number; y: number; z: number }>>(
+    Array.from({ length: count }, () => ({
+      x: (Math.random() - 0.5) * 0.1,
+      y: -Math.random() * 0.15 - 0.05, // downward
+      z: (Math.random() - 0.5) * 0.02,
+    }))
   );
 
   useFrame(() => {

@@ -139,8 +139,8 @@ export async function POST(request: NextRequest) {
         spent_usd: 0,
         call_count: 0,
         blocked_count: 0,
-      })
-      .catch(() => {}); // 무시
+      });
+    // 무시
 
     return NextResponse.json({ data: project }, { status: 201 });
   } catch (error) {

@@ -20,7 +20,6 @@ function Scene({ animationPhase }: { animationPhase: number }) {
     <>
       <perspectiveCamera
         ref={cameraRef}
-        makeDefault
         position={[0, 0, 5]}
         fov={60}
         near={0.1}

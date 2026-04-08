@@ -91,7 +91,7 @@ export default function ProjectsPage() {
           <p className="text-[#8b949e]">Manage budgets and monitor costs per project</p>
         </div>
         <Dialog>
-          <DialogTrigger asChild>
+          <DialogTrigger>
             <Button className="bg-[#00ff88] text-[#0d1117] font-bold">
               + New Project
             </Button>

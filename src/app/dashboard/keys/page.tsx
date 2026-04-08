@@ -96,7 +96,7 @@ export default function ApiKeysPage() {
           </p>
         </div>
         <Dialog>
-          <DialogTrigger asChild>
+          <DialogTrigger>
             <Button className="bg-[#00ff88] text-[#0d1117] font-bold">
               + Create Key
             </Button>

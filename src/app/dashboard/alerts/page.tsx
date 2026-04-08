@@ -211,7 +211,7 @@ export default function AlertsPage() {
               </label>
               <Slider
                 value={[retryThreshold]}
-                onValueChange={(val) => setRetryThreshold(val[0])}
+                onValueChange={(val) => setRetryThreshold(Array.isArray(val) ? val[0] : val)}
                 min={1}
                 max={20}
                 step={1}

@@ -274,22 +274,19 @@ export default function PricingPage() {
             className="max-w-2xl mx-auto"
           >
             <h2 className="text-3xl font-bold text-center mb-8">FAQ</h2>
-            <Accordion type="single" collapsible className="space-y-3">
+            <div className="space-y-3">
               {faqs.map((faq, idx) => (
-                <AccordionItem
+                <div
                   key={idx}
-                  value={`faq-${idx}`}
                   className="bg-[#161b22] border border-[#30363d] rounded-lg px-6"
                 >
-                  <AccordionTrigger className="text-left font-medium hover:text-[#00ff88]">
+                  <div className="text-left font-medium py-4 text-[#e6edf3] hover:text-[#00ff88] cursor-pointer">
                     {faq.q}
-                  </AccordionTrigger>
-                  <AccordionContent className="text-[#8b949e]">
-                    {faq.a}
-                  </AccordionContent>
-                </AccordionItem>
+                  </div>
+                  <div className="text-[#8b949e] pb-4">{faq.a}</div>
+                </div>
               ))}
-            </Accordion>
+            </div>
           </motion.div>
         </div>
       </section>
