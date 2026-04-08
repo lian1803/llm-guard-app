@@ -54,19 +54,14 @@ const mockBlockEvents = [
 ];
 
 export default function DashboardPage() {
-  const [mounted, setMounted] = useState(false);
   const [todayCost] = useState(48.32);
   const [monthlyBudget] = useState(500);
   const [requestsBlocked] = useState(3);
   const [remainingBudget] = useState(monthlyBudget - todayCost);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   const budgetPercentage = Math.round((todayCost / monthlyBudget) * 100);
 
-  if (!mounted) {
+  if (false) {
     return <div className="p-6">Loading...</div>;
   }
 
