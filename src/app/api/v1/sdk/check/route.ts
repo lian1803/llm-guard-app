@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { SDKCheckRequest, SDKCheckResponse } from '@/types';
 import { createServiceClient } from '@/lib/supabase/server';
-import { getLoopCounter, getCurrentMonthSpent } from '@/lib/upstash';
+import { getLoopCounter, incrementLoopCounter, getCurrentMonthSpent } from '@/lib/upstash';
 import { calculateCost, getModelPricing } from '@/lib/token-pricing';
 import { generateRequestId, verifyApiKey } from '@/lib/utils';
 import { z } from 'zod';
@@ -161,7 +161,10 @@ export async function POST(request: NextRequest) {
     const allowed = estimatedCost <= remainingBudget;
 
     // 6. 루프 감지
-    const loopCount = await getLoopCounter(project.id, body.request_hash);
+    let loopCount = await getLoopCounter(project.id, body.request_hash);
+    // 요청 해시 카운터 증가
+    loopCount = loopCount + 1;
+    await incrementLoopCounter(project.id, body.request_hash);
     const loopDetected = loopCount >= 10;
 
     // 응답 생성

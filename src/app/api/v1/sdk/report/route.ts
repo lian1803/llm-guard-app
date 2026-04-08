@@ -141,12 +141,12 @@ export async function POST(request: NextRequest) {
         }
 
         if (existingBudget?.id) {
-          // 업데이트
+          // 업데이트: Redis에서 가져온 현재 비용 사용
+          const currentSpent = await incrementSpent(apiKeyRecord.project_id, 0) || body.cost_usd;
           const { error: updateError } = await supabase
             .from('budgets')
             .update({
-              spent_usd: (await supabase.rpc('get_current_spend', { p_project_id: apiKeyRecord.project_id })).data,
-              call_count: body.is_blocked ? 0 : 1, // 증가시키는 로직은 trigger로 처리
+              spent_usd: currentSpent,
               updated_at: new Date().toISOString(),
             })
             .eq('id', existingBudget.id);

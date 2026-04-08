@@ -21,12 +21,23 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // Mock login
-      if (email && password) {
-        toast.success('Login successful');
-        router.push('/dashboard');
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.error?.message || 'Login failed. Please try again.');
+        return;
       }
+
+      toast.success('Login successful');
+      router.push('/dashboard');
     } catch (error) {
+      console.error('[Login Error]', error);
       toast.error('Login failed. Please try again.');
     } finally {
       setIsLoading(false);

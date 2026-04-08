@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,34 +20,55 @@ import { toast } from 'sonner';
 interface ApiKey {
   id: string;
   name: string;
-  key: string;
-  created: string;
-  lastUsed: string;
-  active: boolean;
+  key_prefix: string;
+  created_at: string;
+  last_used_at?: string;
+  is_active: boolean;
+}
+
+interface ApiKeyResponse extends ApiKey {
+  key?: string; // 1회만 노출
 }
 
 export default function ApiKeysPage() {
-  const [keys, setKeys] = useState<ApiKey[]>([
-    {
-      id: '1',
-      name: 'Production API',
-      key: 'llmg_prod_2k9d8f7h6a5j4l2w1q0e9r8t',
-      created: '2 months ago',
-      lastUsed: '2 hours ago',
-      active: true,
-    },
-    {
-      id: '2',
-      name: 'Development',
-      key: 'llmg_dev_9x8c7v6b5n4m3k2j1h0g9f8e',
-      created: '1 month ago',
-      lastUsed: '30 minutes ago',
-      active: true,
-    },
-  ]);
-
+  const [keys, setKeys] = useState<ApiKey[]>([]);
   const [newKeyName, setNewKeyName] = useState('');
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+
+  // 프로젝트 선택 (임시: 첫 번째 프로젝트 사용)
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+
+  // 초기 로드: 프로젝트 및 API 키 조회
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        // 프로젝트 조회
+        const projectRes = await fetch('/api/dashboard/projects');
+        if (!projectRes.ok) throw new Error('Failed to fetch projects');
+        const projectData = await projectRes.json();
+
+        if (projectData.data && projectData.data.length > 0) {
+          setSelectedProjectId(projectData.data[0].id);
+        }
+
+        // API 키 조회
+        const keysRes = await fetch('/api/dashboard/api-keys');
+        if (!keysRes.ok) throw new Error('Failed to fetch API keys');
+        const keysData = await keysRes.json();
+        setKeys(keysData.data || []);
+      } catch (error) {
+        console.error('[Load Keys Error]', error);
+        toast.error('Failed to load API keys');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
 
   const toggleKeyVisibility = (id: string) => {
     const newVisible = new Set(visibleKeys);
@@ -64,25 +85,75 @@ export default function ApiKeysPage() {
     toast.success('Copied to clipboard');
   };
 
-  const handleCreateKey = () => {
-    if (newKeyName) {
+  const handleCreateKey = async () => {
+    if (!newKeyName || !selectedProjectId) {
+      toast.error('Please enter a key name and select a project');
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      const response = await fetch('/api/dashboard/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: selectedProjectId,
+          name: newKeyName,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.error?.message || 'Failed to create API key');
+        return;
+      }
+
+      // 새 키를 표시 목록에 추가
       const newKey: ApiKey = {
-        id: Date.now().toString(),
+        id: data.data.prefix,
         name: newKeyName,
-        key: `llmg_${Math.random().toString(36).substr(2, 24)}`,
-        created: 'just now',
-        lastUsed: 'never',
-        active: true,
+        key_prefix: data.data.prefix,
+        created_at: new Date().toISOString(),
+        is_active: true,
       };
       setKeys([...keys, newKey]);
+
+      // 1회용 키 표시 (복사 유도)
+      const temp = new Set(visibleKeys);
+      temp.add(data.data.prefix);
+      setVisibleKeys(temp);
+
+      toast.success('API key created. Save it securely!');
+      toast.message(`Key: ${data.data.key}`);
+
       setNewKeyName('');
-      toast.success('API key created');
+      setIsDialogOpen(false);
+    } catch (error) {
+      console.error('[Create Key Error]', error);
+      toast.error('Failed to create API key');
+    } finally {
+      setIsCreating(false);
     }
   };
 
-  const handleDeleteKey = (id: string) => {
-    setKeys(keys.filter((k) => k.id !== id));
-    toast.success('API key deleted');
+  const handleDeleteKey = async (id: string) => {
+    try {
+      const response = await fetch(`/api/dashboard/api-keys/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        toast.error('Failed to delete API key');
+        return;
+      }
+
+      setKeys(keys.filter((k) => k.id !== id));
+      toast.success('API key deleted');
+    } catch (error) {
+      console.error('[Delete Key Error]', error);
+      toast.error('Failed to delete API key');
+    }
   };
 
   return (
@@ -95,8 +166,8 @@ export default function ApiKeysPage() {
             Create and manage API keys for the LLM Guard SDK
           </p>
         </div>
-        <Dialog>
-          <DialogTrigger>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
             <Button className="bg-[#00ff88] text-[#0d1117] font-bold">
               + Create Key
             </Button>
@@ -115,14 +186,16 @@ export default function ApiKeysPage() {
                   placeholder="e.g., Production API"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
+                  disabled={isCreating}
                   className="mt-2 bg-[#0d1117] border-[#30363d]"
                 />
               </div>
               <Button
                 onClick={handleCreateKey}
+                disabled={isCreating}
                 className="w-full bg-[#00ff88] text-[#0d1117] font-bold"
               >
-                Create Key
+                {isCreating ? 'Creating...' : 'Create Key'}
               </Button>
             </div>
           </DialogContent>
@@ -146,7 +219,7 @@ export default function ApiKeysPage() {
                     <div className="flex items-center gap-3 mb-3">
                       <p className="font-bold">{key.name}</p>
                       <Badge className="bg-[#00ff88]/20 text-[#00ff88] text-xs">
-                        {key.active ? 'Active' : 'Inactive'}
+                        {key.is_active ? 'Active' : 'Inactive'}
                       </Badge>
                     </div>
 
@@ -154,8 +227,8 @@ export default function ApiKeysPage() {
                     <div className="bg-[#0d1117] rounded px-3 py-2 font-mono text-sm flex items-center justify-between mb-3">
                       <span className="text-[#6e7681]">
                         {visibleKeys.has(key.id)
-                          ? key.key
-                          : key.key.substring(0, 8) + '•'.repeat(24)}
+                          ? key.key_prefix
+                          : key.key_prefix.substring(0, 8) + '•'.repeat(24)}
                       </span>
                       <button
                         onClick={() => toggleKeyVisibility(key.id)}
@@ -173,11 +246,11 @@ export default function ApiKeysPage() {
                     <div className="grid grid-cols-2 gap-4 text-xs text-[#6e7681]">
                       <div>
                         <p className="text-[#8b949e] font-medium">Created</p>
-                        <p>{key.created}</p>
+                        <p>{new Date(key.created_at).toLocaleDateString()}</p>
                       </div>
                       <div>
                         <p className="text-[#8b949e] font-medium">Last Used</p>
-                        <p>{key.lastUsed}</p>
+                        <p>{key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never'}</p>
                       </div>
                     </div>
                   </div>
@@ -187,7 +260,7 @@ export default function ApiKeysPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => copyToClipboard(key.key)}
+                      onClick={() => copyToClipboard(key.key_prefix)}
                       className="text-xs"
                     >
                       <Copy size={14} className="mr-1" />
