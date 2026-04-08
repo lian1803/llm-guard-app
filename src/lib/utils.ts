@@ -90,7 +90,7 @@ export function createErrorResponse(
   message: string,
   requestId: string,
   status: number = 400
-): { error: any; status: number } {
+): { error: { code: string; message: string; requestId: string }; status: number } {
   return {
     error: {
       code,
