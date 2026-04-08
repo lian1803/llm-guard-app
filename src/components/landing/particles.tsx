@@ -13,23 +13,24 @@ export function Particles({ count = 500, animationPhase }: ParticlesProps) {
   const mesh = useRef<THREE.Points>(null);
   const material = useRef<THREE.PointsMaterial>(null);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const { positions, colors } = useMemo(() => {
     const pos = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
 
     for (let i = 0; i < count; i++) {
-      // Spread across X axis, start from top
-      pos[i * 3] = (Math.random() - 0.5) * 8; // X: spread
-      pos[i * 3 + 1] = Math.random() * 2 + 3; // Y: top area
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 2; // Z: slight depth
-
-      col[i * 3] = 1; // R
-      col[i * 3 + 1] = 0.26; // G
-      col[i * 3 + 2] = 0.26; // B
+      /* eslint-disable no-restricted-globals */
+      pos[i * 3] = (Math.random() - 0.5) * 8;
+      pos[i * 3 + 1] = Math.random() * 2 + 3;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 2;
+      /* eslint-enable no-restricted-globals */
+      col[i * 3] = 1;
+      col[i * 3 + 1] = 0.26;
+      col[i * 3 + 2] = 0.26;
     }
 
     return { positions: pos, colors: col };
-  }, [count]);
+  }, [count]); // intentional: random init per count change
 
   const velocities = useRef<Array<{ x: number; y: number; z: number }>>(
     Array.from({ length: count }, () => ({
