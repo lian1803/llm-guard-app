@@ -36,7 +36,7 @@ export async function verifyApiKey(plain: string, hash: string): Promise<boolean
 /**
  * 요청 메시지 해시 (루프 감지용)
  */
-export function computeMessageHash(messages: any[]): string {
+export function computeMessageHash(messages: unknown[]): string {
   const content = JSON.stringify(messages);
   return crypto.createHash('sha256').update(content).digest('hex');
 }
