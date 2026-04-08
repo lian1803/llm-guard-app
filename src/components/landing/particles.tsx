@@ -53,7 +53,7 @@ export function Particles({ count = 500, animationPhase }: ParticlesProps) {
 
     for (let i = 0; i < count; i++) {
       const idx = i * 3;
-      const vel = velocities.current[i] as any;
+      const vel = velocities.current[i] as { x: number; y: number; z: number };
 
       // Physics
       posArray[idx] += vel.x;
