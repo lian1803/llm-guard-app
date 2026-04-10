@@ -27,7 +27,7 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          NEXT_PUBLIC_APP_URL: https://llm-guard-app.pages.dev
+          NEXT_PUBLIC_APP_URL: https://llm-guard-app.lian1803.workers.dev
 
       - name: Deploy to Cloudflare Workers
         run: npx wrangler deploy
