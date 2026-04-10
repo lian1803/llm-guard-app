@@ -15,9 +15,16 @@ export async function verifyAuth(request: NextRequest): Promise<{ userId: string
       token = authHeader.split(' ')[1] || null;
     }
 
-    // 2. HttpOnly 쿠키 (브라우저)
+    // 2. HttpOnly 쿠키 (브라우저) — raw Cookie 헤더에서 파싱
     if (!token) {
-      token = request.cookies.get('auth_token')?.value || null;
+      const cookieHeader = request.headers.get('cookie') || '';
+      for (const part of cookieHeader.split(';')) {
+        const [name, ...rest] = part.trim().split('=');
+        if (name.trim() === 'auth_token') {
+          token = rest.join('=') || null;
+          break;
+        }
+      }
     }
 
     if (!token) return null;
