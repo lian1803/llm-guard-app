@@ -16,11 +16,12 @@ import {
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
-interface UsageData {
-  todayCost: number;
-  monthlyBudget: number;
-  requestsBlocked: number;
-  remainingBudget: number;
+interface Project {
+  id: string;
+  name: string;
+  budget_usd: number;
+  reset_day: number;
+  is_active: number;
 }
 
 interface ChartDataPoint {
@@ -28,22 +29,13 @@ interface ChartDataPoint {
   cost: number;
 }
 
-interface BlockEvent {
-  id: number;
-  time: string;
-  model: string;
-  reason: string;
-  cost: string;
-  blocked: boolean;
-}
-
 export default function DashboardPage() {
+  const [project, setProject] = useState<Project | null>(null);
   const [todayCost, setTodayCost] = useState(0);
   const [monthlyBudget, setMonthlyBudget] = useState(0);
   const [requestsBlocked, setRequestsBlocked] = useState(0);
   const [remainingBudget, setRemainingBudget] = useState(0);
   const [costData, setCostData] = useState<ChartDataPoint[]>([]);
-  const [blockEvents, setBlockEvents] = useState<BlockEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,31 +47,53 @@ export default function DashboardPage() {
         setIsLoading(true);
         setError(null);
 
-        // 병렬로 두 API 호출
+        // 1. 프로젝트 목록 먼저 조회
+        const projectsRes = await fetch('/api/dashboard/projects', { credentials: 'include' });
+        if (!projectsRes.ok) {
+          if (projectsRes.status === 401) {
+            window.location.href = '/auth/login';
+            return;
+          }
+          throw new Error('Failed to load projects');
+        }
+
+        const projectsData = await projectsRes.json();
+        const projects: Project[] = projectsData.data || [];
+
+        if (projects.length === 0) {
+          // 프로젝트가 없는 경우 빈 상태
+          setIsLoading(false);
+          return;
+        }
+
+        const firstProject = projects[0];
+        setProject(firstProject);
+
+        // 2. 프로젝트 ID로 usage + chart 병렬 조회
         const [usageRes, chartRes] = await Promise.all([
-          fetch('/api/dashboard/usage', { credentials: 'include' }),
-          fetch('/api/dashboard/chart', { credentials: 'include' }),
+          fetch(`/api/dashboard/usage?project_id=${firstProject.id}`, { credentials: 'include' }),
+          fetch(`/api/dashboard/chart?project_id=${firstProject.id}&days=7`, { credentials: 'include' }),
         ]);
 
-        if (!usageRes.ok) {
-          throw new Error('Failed to fetch usage data');
+        if (usageRes.ok) {
+          const usageJson = await usageRes.json();
+          const usage = usageJson.data;
+          if (usage) {
+            setTodayCost(usage.spent_usd || 0);
+            setMonthlyBudget(usage.budget_usd || firstProject.budget_usd);
+            setRequestsBlocked(usage.blocked_count || 0);
+            setRemainingBudget(usage.remaining_usd || firstProject.budget_usd);
+          }
         }
-        if (!chartRes.ok) {
-          throw new Error('Failed to fetch chart data');
+
+        if (chartRes.ok) {
+          const chartJson = await chartRes.json();
+          const chartPoints: ChartDataPoint[] = (chartJson.data || []).map((d: { date: string; cost: number }) => ({
+            time: d.date,
+            cost: d.cost,
+          }));
+          setCostData(chartPoints);
         }
-
-        const usageData: UsageData = await usageRes.json();
-        const chartData = await chartRes.json();
-
-        // Usage 데이터 설정
-        setTodayCost(usageData.todayCost);
-        setMonthlyBudget(usageData.monthlyBudget);
-        setRequestsBlocked(usageData.requestsBlocked);
-        setRemainingBudget(usageData.remainingBudget);
-
-        // Chart 데이터 설정
-        setCostData(chartData.data || []);
-        setBlockEvents(chartData.events || []);
       } catch (err) {
         console.error('[Dashboard Load Error]', err);
         setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
@@ -99,11 +113,11 @@ export default function DashboardPage() {
           {[...Array(4)].map((_, i) => (
             <Card key={i} className="bg-[#161b22] border-[#30363d]">
               <CardHeader className="pb-2">
-                <div className="h-4 bg-[#30363d] rounded w-1/2" />
+                <div className="h-4 bg-[#30363d] rounded w-1/2 animate-pulse" />
               </CardHeader>
               <CardContent>
-                <div className="h-8 bg-[#30363d] rounded mb-3" />
-                <div className="h-3 bg-[#30363d] rounded w-2/3" />
+                <div className="h-8 bg-[#30363d] rounded mb-3 animate-pulse" />
+                <div className="h-3 bg-[#30363d] rounded w-2/3 animate-pulse" />
               </CardContent>
             </Card>
           ))}
@@ -130,8 +144,33 @@ export default function DashboardPage() {
     );
   }
 
+  if (!project) {
+    return (
+      <div className="p-6">
+        <Card className="bg-[#161b22] border-[#30363d]">
+          <CardContent className="pt-6 text-center">
+            <p className="text-[#8b949e] mb-4">No projects yet. Create your first project to get started.</p>
+            <Button
+              onClick={() => window.location.href = '/dashboard/projects'}
+              className="bg-[#00ff88] text-[#0d1117] font-bold"
+            >
+              Create Project
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
+      {/* Project selector */}
+      <div className="flex items-center gap-2 text-sm text-[#8b949e]">
+        <span>Project:</span>
+        <span className="text-[#e6edf3] font-medium">{project.name}</span>
+        <Badge className="bg-[#00ff88]/20 text-[#00ff88] text-xs">ACTIVE</Badge>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <motion.div
@@ -142,12 +181,12 @@ export default function DashboardPage() {
           <Card className="bg-[#161b22] border-[#30363d]">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-[#8b949e]">
-                Today Cost
+                Total Spent
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold font-mono">${todayCost.toFixed(2)}</div>
-              <p className="text-xs text-[#8b949e] mt-2">+$2.10 vs yesterday</p>
+              <div className="text-3xl font-bold font-mono">${todayCost.toFixed(4)}</div>
+              <p className="text-xs text-[#8b949e] mt-2">This billing period</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -176,10 +215,10 @@ export default function DashboardPage() {
                       ? 'bg-[#f0c040]'
                       : 'bg-[#00ff88]'
                   }`}
-                  style={{ width: `${budgetPercentage}%` }}
+                  style={{ width: `${Math.min(budgetPercentage, 100)}%` }}
                 />
               </div>
-              <p className="text-xs text-[#6e7681] mt-2">Resets in 19 days</p>
+              <p className="text-xs text-[#6e7681] mt-2">of ${monthlyBudget} budget</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -200,7 +239,7 @@ export default function DashboardPage() {
                 {requestsBlocked}
               </div>
               <Badge className="mt-3 bg-[#00ff88]/20 text-[#00ff88]">
-                ACTIVE GUARD
+                GUARD ACTIVE
               </Badge>
             </CardContent>
           </Card>
@@ -221,7 +260,7 @@ export default function DashboardPage() {
               <div className="text-3xl font-bold font-mono text-[#00ff88]">
                 ${remainingBudget.toFixed(2)}
               </div>
-              <p className="text-xs text-[#8b949e] mt-2">of ${monthlyBudget}</p>
+              <p className="text-xs text-[#8b949e] mt-2">until circuit breaks</p>
             </CardContent>
           </Card>
         </motion.div>
@@ -236,7 +275,7 @@ export default function DashboardPage() {
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Cost Over Time</CardTitle>
+              <CardTitle>Cost Over Time (7 days)</CardTitle>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-[#00ff88] animate-pulse" />
                 <span className="text-xs text-[#8b949e]">LIVE</span>
@@ -244,33 +283,40 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={costData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
-                <XAxis dataKey="time" stroke="#6e7681" />
-                <YAxis stroke="#6e7681" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#161b22',
-                    border: '1px solid #30363d',
-                    borderRadius: '6px',
-                  }}
-                  labelStyle={{ color: '#e6edf3' }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="cost"
-                  stroke="#00ff88"
-                  dot={false}
-                  strokeWidth={2}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {costData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={costData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
+                  <XAxis dataKey="time" stroke="#6e7681" tick={{ fontSize: 11 }} />
+                  <YAxis stroke="#6e7681" tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#161b22',
+                      border: '1px solid #30363d',
+                      borderRadius: '6px',
+                    }}
+                    labelStyle={{ color: '#e6edf3' }}
+                    formatter={(val: number) => [`$${val.toFixed(4)}`, 'Cost']}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="cost"
+                    stroke="#00ff88"
+                    dot={false}
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-[#6e7681] text-sm">
+                No usage data yet. Start using your API key to see cost trends.
+              </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* Block Events Table */}
+      {/* Quick Start */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -278,56 +324,19 @@ export default function DashboardPage() {
       >
         <Card className="bg-[#161b22] border-[#30363d]">
           <CardHeader>
-            <CardTitle>Recent Block Events</CardTitle>
+            <CardTitle>Quick Start</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[#30363d]">
-                    <th className="text-left py-3 px-4 text-[#8b949e] font-medium">
-                      Time
-                    </th>
-                    <th className="text-left py-3 px-4 text-[#8b949e] font-medium">
-                      Model
-                    </th>
-                    <th className="text-left py-3 px-4 text-[#8b949e] font-medium">
-                      Reason
-                    </th>
-                    <th className="text-left py-3 px-4 text-[#8b949e] font-medium">
-                      Cost
-                    </th>
-                    <th className="text-left py-3 px-4 text-[#8b949e] font-medium">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {blockEvents.map((event) => (
-                    <tr
-                      key={event.id}
-                      className="border-b border-[#30363d] hover:bg-[#21262d] transition-colors"
-                    >
-                      <td className="py-3 px-4">{event.time}</td>
-                      <td className="py-3 px-4 font-mono text-xs">{event.model}</td>
-                      <td className="py-3 px-4 text-[#8b949e]">{event.reason}</td>
-                      <td className="py-3 px-4 font-mono">{event.cost}</td>
-                      <td className="py-3 px-4">
-                        {event.blocked ? (
-                          <Badge className="bg-[#ff4444]/20 text-[#ff4444]">
-                            BLOCKED
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-[#f0c040]/20 text-[#f0c040]">
-                            WARNED
-                          </Badge>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <p className="text-sm text-[#8b949e] mb-4">
+              Get an API key from the <a href="/dashboard/keys" className="text-[#00ff88] hover:underline">API Keys</a> page and wrap your LLM calls:
+            </p>
+            <pre className="bg-[#0d1117] rounded-lg p-4 text-xs font-mono text-[#00ff88] overflow-x-auto">
+{`import llmguard from 'llm-guard-sdk';
+
+const guard = new LLMGuard('your-api-key');
+await guard.check({ model: 'gpt-4', estimatedTokens: 2000 });
+// Throws if budget exceeded — your LLM call is protected`}
+            </pre>
           </CardContent>
         </Card>
       </motion.div>
