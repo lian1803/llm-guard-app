@@ -167,10 +167,8 @@ export default function ApiKeysPage() {
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-[#00ff88] text-[#0d1117] font-bold">
-              + Create Key
-            </Button>
+          <DialogTrigger className="bg-[#00ff88] text-[#0d1117] font-bold font-semibold px-4 py-2 rounded-md text-sm hover:opacity-90">
+            + Create Key
           </DialogTrigger>
           <DialogContent className="bg-[#161b22] border-[#30363d]">
             <DialogHeader>

@@ -36,12 +36,27 @@ export default function SignupPage() {
 
     setIsLoading(true);
     try {
-      // Mock signup
-      if (formData.name && formData.email && formData.password) {
-        toast.success('Account created successfully');
-        router.push('/dashboard');
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.error?.message || 'Signup failed. Please try again.');
+        return;
       }
+
+      toast.success('Account created successfully');
+      router.push('/dashboard');
     } catch (error) {
+      console.error('[Signup Error]', error);
       toast.error('Signup failed. Please try again.');
     } finally {
       setIsLoading(false);

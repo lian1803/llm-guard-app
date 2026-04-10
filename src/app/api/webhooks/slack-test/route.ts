@@ -5,11 +5,33 @@ const testSchema = z.object({
   slack_webhook: z.string().url(),
 });
 
+// SSRF 방지: Slack 웹훅 URL만 허용
+function isAllowedSlackUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === 'https:' &&
+      (parsed.hostname === 'hooks.slack.com' ||
+        parsed.hostname.endsWith('.hooks.slack.com'))
+    );
+  } catch {
+    return false;
+  }
+}
+
 // POST /api/webhooks/slack-test — Slack 웹훅 테스트
 export async function POST(request: NextRequest) {
 
   try {
     const body = testSchema.parse(await request.json());
+
+    // SSRF 방지: 허용된 도메인만 요청 전송
+    if (!isAllowedSlackUrl(body.slack_webhook)) {
+      return NextResponse.json(
+        { error: { code: 'INVALID_WEBHOOK_URL', message: 'Only hooks.slack.com URLs are allowed' } },
+        { status: 400 }
+      );
+    }
 
     // Slack 메시지 전송
     const response = await fetch(body.slack_webhook, {

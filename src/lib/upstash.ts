@@ -109,3 +109,98 @@ export async function getLoopCounter(projectId: string, requestHash: string): Pr
     return 0;
   }
 }
+
+/**
+ * Redis에 spent 초기화 (DB fallback 후 seeding용, SET NX)
+ */
+export async function seedBudgetSpentIfMissing(projectId: string, amount: number): Promise<void> {
+  const redisClient = getRedis();
+  const key = `budget:${projectId}:current`;
+  try {
+    await redisClient.set(key, amount, { nx: true, ex: 30 * 24 * 60 * 60 });
+  } catch (error) {
+    console.error('[Upstash] seedBudgetSpentIfMissing error:', error);
+  }
+}
+
+/**
+ * 원자적 예산 예약 — Lua script으로 race condition 방지
+ * spent + reserved + estimatedCost <= budgetUsd 이면 reserved 증가 후 true 반환
+ * 초과 시 false 반환 (차단)
+ */
+export async function tryReserveBudget(
+  projectId: string,
+  estimatedCost: number,
+  budgetUsd: number
+): Promise<boolean> {
+  const redisClient = getRedis();
+  const spentKey = `budget:${projectId}:current`;
+  const reservedKey = `budget:${projectId}:reserved`;
+
+  const script = `
+    local spent = tonumber(redis.call('GET', KEYS[1])) or 0
+    local reserved = tonumber(redis.call('GET', KEYS[2])) or 0
+    local budget = tonumber(ARGV[1])
+    local amount = tonumber(ARGV[2])
+    if (spent + reserved + amount) > budget then
+      return 0
+    end
+    redis.call('INCRBYFLOAT', KEYS[2], amount)
+    redis.call('EXPIRE', KEYS[2], 300)
+    return 1
+  `;
+
+  try {
+    const result = await redisClient.eval(script, [spentKey, reservedKey], [budgetUsd.toString(), estimatedCost.toString()]);
+    return result === 1;
+  } catch (error) {
+    console.error('[Upstash] tryReserveBudget error:', error);
+    return true; // fail-open: Redis 오류 시 허용
+  }
+}
+
+/**
+ * 예약 해제 (report API에서 실제 비용 처리 후 호출)
+ */
+export async function releaseReservation(projectId: string, amount: number): Promise<void> {
+  const redisClient = getRedis();
+  const reservedKey = `budget:${projectId}:reserved`;
+  try {
+    await redisClient.incrbyfloat(reservedKey, -amount);
+  } catch (error) {
+    console.error('[Upstash] releaseReservation error:', error);
+  }
+}
+
+/**
+ * 서킷브레이커 — DB 오류 카운터 증가
+ * 연속 5회 이상 오류 시 60초 allow-through 모드 진입
+ */
+export async function incrementCircuitError(key: string): Promise<number> {
+  const redisClient = getRedis();
+  const errorKey = `circuit:${key}:errors`;
+  try {
+    const count = await redisClient.incr(errorKey);
+    await redisClient.expire(errorKey, 60); // 60초 윈도우
+    return count;
+  } catch {
+    return 0;
+  }
+}
+
+export async function resetCircuitError(key: string): Promise<void> {
+  const redisClient = getRedis();
+  try {
+    await redisClient.del(`circuit:${key}:errors`);
+  } catch { /* 무시 */ }
+}
+
+export async function isCircuitOpen(key: string): Promise<boolean> {
+  const redisClient = getRedis();
+  try {
+    const count = await redisClient.get<number>(`circuit:${key}:errors`);
+    return (count ?? 0) >= 5;
+  } catch {
+    return false;
+  }
+}

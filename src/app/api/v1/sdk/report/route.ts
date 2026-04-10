@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { SDKReportRequest } from '@/types';
 import { createServiceClient } from '@/lib/supabase/server';
-import { incrementSpent } from '@/lib/upstash';
+import { incrementSpent, releaseReservation } from '@/lib/upstash';
 import { generateRequestId, verifyApiKey, getMonthPeriodStart } from '@/lib/utils';
 import { z } from 'zod';
 
@@ -120,58 +120,24 @@ export async function POST(request: NextRequest) {
           return; // 실패해도 계속
         }
 
-        // 4b. Redis에 비용 증액
+        // 4b. Redis에 비용 증액 + check 시 예약분 해제
         await incrementSpent(apiKeyRecord.project_id, body.cost_usd);
+        await releaseReservation(apiKeyRecord.project_id, body.cost_usd);
 
         // 4c. budgets 테이블 업데이트 또는 생성
         const periodStart = getMonthPeriodStart(1);
         const periodStartStr = periodStart.toISOString().split('T')[0];
 
-        const { data: existingBudget, error: budgetQueryError } = await supabase
-          .from('budgets')
-          .select('id')
-          .eq('project_id', apiKeyRecord.project_id)
-          .eq('period_start', periodStartStr)
-          .single();
+        // Race condition 방지: Supabase RPC로 원자적 upsert (CRITICAL fix)
+        const { error: rpcError } = await supabase.rpc('increment_budget_counts', {
+          p_project_id: apiKeyRecord.project_id,
+          p_period_start: periodStartStr,
+          p_cost_usd: body.cost_usd,
+          p_is_blocked: body.is_blocked,
+        });
 
-        if (budgetQueryError && budgetQueryError.code !== 'PGRST116') {
-          // PGRST116 = 행 없음 (정상)
-          console.error('[Report] Error querying budget:', budgetQueryError);
-          return;
-        }
-
-        if (existingBudget?.id) {
-          // 업데이트: Redis에서 가져온 현재 비용 사용
-          const currentSpent = await incrementSpent(apiKeyRecord.project_id, 0) || body.cost_usd;
-          const { error: updateError } = await supabase
-            .from('budgets')
-            .update({
-              spent_usd: currentSpent,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', existingBudget.id);
-
-          if (updateError) {
-            console.error('[Report] Error updating budget:', updateError);
-          }
-        } else {
-          // 생성
-          const { error: insertError } = await supabase
-            .from('budgets')
-            .insert({
-              project_id: apiKeyRecord.project_id,
-              user_id: apiKeyRecord.user_id,
-              period_start: periodStartStr,
-              spent_usd: body.cost_usd,
-              call_count: body.is_blocked ? 0 : 1,
-              blocked_count: body.is_blocked ? 1 : 0,
-              updated_at: new Date().toISOString(),
-            });
-
-          if (insertError && insertError.code !== 'PGRST100') {
-            // PGRST100 = 중복 (동시성 문제, 무시)
-            console.error('[Report] Error inserting budget:', insertError);
-          }
+        if (rpcError) {
+          console.error('[Report] Error in budget RPC:', rpcError);
         }
       } catch (bgError) {
         console.error('[Report] Background task error:', bgError);

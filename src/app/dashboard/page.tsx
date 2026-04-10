@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,55 +14,120 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 
-// Mock data
-const mockCostData = [
-  { time: '12:00 AM', cost: 0 },
-  { time: '2:00 AM', cost: 12.3 },
-  { time: '4:00 AM', cost: 24.5 },
-  { time: '6:00 AM', cost: 28.4 },
-  { time: '8:00 AM', cost: 35.2 },
-  { time: '10:00 AM', cost: 42.1 },
-  { time: '12:00 PM', cost: 48.3 },
-];
+interface UsageData {
+  todayCost: number;
+  monthlyBudget: number;
+  requestsBlocked: number;
+  remainingBudget: number;
+}
 
-const mockBlockEvents = [
-  {
-    id: 1,
-    time: '2:15 PM',
-    model: 'gpt-4',
-    reason: 'Loop detected',
-    cost: '$12.50',
-    blocked: true,
-  },
-  {
-    id: 2,
-    time: '1:45 PM',
-    model: 'gpt-4-turbo',
-    reason: 'Budget threshold',
-    cost: '$8.75',
-    blocked: true,
-  },
-  {
-    id: 3,
-    time: '12:30 PM',
-    model: 'claude-3',
-    reason: 'Unusual pattern',
-    cost: '$5.25',
-    blocked: false,
-  },
-];
+interface ChartDataPoint {
+  time: string;
+  cost: number;
+}
+
+interface BlockEvent {
+  id: number;
+  time: string;
+  model: string;
+  reason: string;
+  cost: string;
+  blocked: boolean;
+}
 
 export default function DashboardPage() {
-  const [todayCost] = useState(48.32);
-  const [monthlyBudget] = useState(500);
-  const [requestsBlocked] = useState(3);
-  const [remainingBudget] = useState(monthlyBudget - todayCost);
+  const [todayCost, setTodayCost] = useState(0);
+  const [monthlyBudget, setMonthlyBudget] = useState(0);
+  const [requestsBlocked, setRequestsBlocked] = useState(0);
+  const [remainingBudget, setRemainingBudget] = useState(0);
+  const [costData, setCostData] = useState<ChartDataPoint[]>([]);
+  const [blockEvents, setBlockEvents] = useState<BlockEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const budgetPercentage = Math.round((todayCost / monthlyBudget) * 100);
+  const budgetPercentage = monthlyBudget > 0 ? Math.round((todayCost / monthlyBudget) * 100) : 0;
 
-  if (false) {
-    return <div className="p-6">Loading...</div>;
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        // 병렬로 두 API 호출
+        const [usageRes, chartRes] = await Promise.all([
+          fetch('/api/dashboard/usage'),
+          fetch('/api/dashboard/chart'),
+        ]);
+
+        if (!usageRes.ok) {
+          throw new Error('Failed to fetch usage data');
+        }
+        if (!chartRes.ok) {
+          throw new Error('Failed to fetch chart data');
+        }
+
+        const usageData: UsageData = await usageRes.json();
+        const chartData = await chartRes.json();
+
+        // Usage 데이터 설정
+        setTodayCost(usageData.todayCost);
+        setMonthlyBudget(usageData.monthlyBudget);
+        setRequestsBlocked(usageData.requestsBlocked);
+        setRemainingBudget(usageData.remainingBudget);
+
+        // Chart 데이터 설정
+        setCostData(chartData.data || []);
+        setBlockEvents(chartData.events || []);
+      } catch (err) {
+        console.error('[Dashboard Load Error]', err);
+        setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
+        toast.error('Failed to load dashboard. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i} className="bg-[#161b22] border-[#30363d]">
+              <CardHeader className="pb-2">
+                <div className="h-4 bg-[#30363d] rounded w-1/2" />
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 bg-[#30363d] rounded mb-3" />
+                <div className="h-3 bg-[#30363d] rounded w-2/3" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card className="bg-[#161b22] border-[#ff4444]">
+          <CardContent className="pt-6">
+            <p className="text-[#ff4444] mb-4">{error}</p>
+            <Button
+              onClick={() => window.location.reload()}
+              className="bg-[#00ff88] text-[#0d1117] font-bold"
+            >
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -180,7 +245,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={mockCostData}>
+              <LineChart data={costData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
                 <XAxis dataKey="time" stroke="#6e7681" />
                 <YAxis stroke="#6e7681" />
@@ -238,7 +303,7 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {mockBlockEvents.map((event) => (
+                  {blockEvents.map((event) => (
                     <tr
                       key={event.id}
                       className="border-b border-[#30363d] hover:bg-[#21262d] transition-colors"

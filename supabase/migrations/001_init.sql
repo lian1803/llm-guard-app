@@ -177,3 +177,34 @@ RETURNS DATE AS $$
     ), 1) - 1) * interval '1 day'::interval
   END
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+-- =============================================
+-- RPC: budgets 원자적 증분 (Race Condition 방지)
+-- =============================================
+CREATE OR REPLACE FUNCTION increment_budget_counts(
+  p_project_id UUID,
+  p_period_start DATE,
+  p_cost_usd NUMERIC,
+  p_is_blocked BOOLEAN
+) RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  INSERT INTO public.budgets (project_id, period_start, spent_usd, call_count, blocked_count, updated_at)
+  VALUES (
+    p_project_id,
+    p_period_start,
+    p_cost_usd,
+    CASE WHEN p_is_blocked THEN 0 ELSE 1 END,
+    CASE WHEN p_is_blocked THEN 1 ELSE 0 END,
+    now()
+  )
+  ON CONFLICT (project_id, period_start)
+  DO UPDATE SET
+    spent_usd    = budgets.spent_usd + EXCLUDED.spent_usd,
+    call_count   = budgets.call_count + EXCLUDED.call_count,
+    blocked_count= budgets.blocked_count + EXCLUDED.blocked_count,
+    updated_at   = now();
+END;
+$$;

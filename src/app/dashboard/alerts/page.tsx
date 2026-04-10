@@ -9,6 +9,7 @@ import { Slider } from '@/components/ui/slider';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
+// Alert thresholds configuration
 const thresholds = [
   {
     level: '50%',
@@ -30,23 +31,71 @@ const thresholds = [
   },
 ];
 
+// Mock alert history (will be replaced by API data in future)
+const mockAlertHistory = [
+  {
+    time: '2:15 PM',
+    level: '80%',
+    message: 'Budget threshold reached for Production API',
+  },
+  {
+    time: '12:30 PM',
+    level: '50%',
+    message: 'Budget alert for Development project',
+  },
+  {
+    time: '10:15 AM',
+    level: '100%',
+    message: 'Budget limit exceeded - requests blocked',
+  },
+];
+
 export default function AlertsPage() {
   const [slackConnected, setSlackConnected] = useState(false);
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [loopDetectionEnabled, setLoopDetectionEnabled] = useState(false);
   const [retryThreshold, setRetryThreshold] = useState(5);
 
-  const handleSaveAlerts = () => {
-    toast.success('Alert settings saved');
+  const handleSaveAlerts = async () => {
+    try {
+      // TODO: Implement API call to save alerts
+      // const response = await fetch('/api/dashboard/alerts', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({
+      //     emailNotifications,
+      //     loopDetectionEnabled,
+      //     retryThreshold,
+      //   }),
+      // });
+
+      toast.success('Alert settings saved');
+    } catch (error) {
+      console.error('[Save Alerts Error]', error);
+      toast.error('Failed to save alert settings');
+    }
   };
 
-  const handleConnectSlack = () => {
-    toast.success('Slack connected successfully');
-    setSlackConnected(true);
+  const handleConnectSlack = async () => {
+    try {
+      // TODO: Implement Slack OAuth flow
+      // Redirect to Slack OAuth endpoint
+      toast.success('Slack connected successfully');
+      setSlackConnected(true);
+    } catch (error) {
+      console.error('[Slack Connect Error]', error);
+      toast.error('Failed to connect Slack');
+    }
   };
 
-  const handleTestAlerts = () => {
-    toast.success('Test alert sent to your channels');
+  const handleTestAlerts = async () => {
+    try {
+      // TODO: Implement test alert API call
+      toast.success('Test alert sent to your channels');
+    } catch (error) {
+      console.error('[Test Alert Error]', error);
+      toast.error('Failed to send test alert');
+    }
   };
 
   return (
@@ -238,23 +287,7 @@ export default function AlertsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {[
-                {
-                  time: '2:15 PM',
-                  level: '80%',
-                  message: 'Budget threshold reached for Production API',
-                },
-                {
-                  time: '12:30 PM',
-                  level: '50%',
-                  message: 'Budget alert for Development project',
-                },
-                {
-                  time: '10:15 AM',
-                  level: '100%',
-                  message: 'Budget limit exceeded - requests blocked',
-                },
-              ].map((alert, idx) => (
+              {mockAlertHistory.map((alert, idx) => (
                 <div
                   key={idx}
                   className="flex items-start gap-4 p-3 bg-[#0d1117] rounded"
@@ -279,6 +312,9 @@ export default function AlertsPage() {
                 </div>
               ))}
             </div>
+            <p className="text-xs text-[#6e7681] mt-4">
+              Alert history will be loaded from API in future updates
+            </p>
           </CardContent>
         </Card>
       </motion.div>

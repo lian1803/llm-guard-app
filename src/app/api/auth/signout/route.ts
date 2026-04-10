@@ -1,37 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { generateRequestId } from '@/lib/utils';
 
-// POST /api/auth/signout — 로그아웃
+/**
+ * POST /api/auth/signout — 로그아웃
+ */
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId();
 
   try {
-    const supabase = await createClient();
-
-    const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'AUTH_ERROR',
-            message: error.message,
-            requestId,
-          },
+    const response = NextResponse.json(
+      {
+        data: {
+          message: 'Signout successful',
         },
-        { status: 400 }
-      );
-    }
+      },
+      { status: 200 }
+    );
 
-    return NextResponse.json({ data: { message: 'Signed out successfully' } }, { status: 200 });
+    // 쿠키 삭제
+    response.cookies.delete('auth_token');
+
+    return response;
   } catch (error) {
     console.error('[Signout Error]', error);
+
     return NextResponse.json(
       {
         error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Internal server error',
+          code: 'SIGNOUT_ERROR',
+          message: 'Failed to sign out',
           requestId,
         },
       },

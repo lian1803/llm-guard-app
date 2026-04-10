@@ -30,26 +30,17 @@ export async function createClient() {
 
 /**
  * 서비스 롤 클라이언트 (관리자 전용 작업용)
+ * ⚠️ 싱글톤 캐싱 금지 — Vercel warm 재사용 환경에서 요청 간 상태 오염 방지
  */
-let serviceClient: ReturnType<typeof createServerClient> | null = null;
-
 export async function createServiceClient() {
-  if (serviceClient) {
-    return serviceClient;
-  }
-
-  serviceClient = createServerClient(
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
       cookies: {
-        getAll() {
-          return [];
-        },
+        getAll() { return []; },
         setAll() {},
       },
     }
   );
-
-  return serviceClient;
 }

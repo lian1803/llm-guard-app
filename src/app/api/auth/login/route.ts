@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { login } from '@/lib/auth';
 import { generateRequestId } from '@/lib/utils';
 import { z } from 'zod';
 
@@ -8,67 +8,73 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password required'),
 });
 
-// POST /api/auth/login — 로그인
+/**
+ * POST /api/auth/login — 로그인
+ * D1 + JWT 기반 인증
+ */
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId();
 
   try {
-    const body = loginSchema.parse(await request.json());
-    const supabase = await createClient();
-
-    // Supabase Auth로 로그인
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: body.email,
-      password: body.password,
-    });
-
-    if (authError) {
+    // 1. 요청 파싱
+    let body: { email: string; password: string };
+    try {
+      body = loginSchema.parse(await request.json());
+    } catch (error) {
       return NextResponse.json(
         {
           error: {
-            code: 'AUTH_ERROR',
-            message: authError.message,
+            code: 'INVALID_REQUEST',
+            message:
+              error instanceof z.ZodError
+                ? error.errors[0].message
+                : 'Invalid request body',
             requestId,
           },
         },
-        { status: 401 }
+        { status: 400 }
       );
     }
 
-    if (!authData.user || !authData.session) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'AUTH_ERROR',
-            message: 'Login failed',
-            requestId,
-          },
-        },
-        { status: 401 }
-      );
-    }
+    // 2. 로그인 처리
+    const { user, token } = await login(body.email, body.password);
 
-    return NextResponse.json(
+    // 3. JWT를 쿠키로 설정
+    const response = NextResponse.json(
       {
         data: {
-          user_id: authData.user.id,
-          email: authData.user.email,
+          user_id: user.id,
+          email: user.email,
+          plan: user.plan,
           message: 'Login successful',
         },
       },
       { status: 200 }
     );
+
+    // HttpOnly 쿠키로 토큰 설정
+    response.cookies.set('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+      path: '/',
+    });
+
+    return response;
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
     console.error('[Login Error]', error);
+
     return NextResponse.json(
       {
         error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Internal server error',
-          requestId: generateRequestId(),
+          code: 'AUTH_ERROR',
+          message,
+          requestId,
         },
       },
-      { status: 500 }
+      { status: 401 }
     );
   }
 }

@@ -3,6 +3,9 @@ import bcrypt from 'bcryptjs';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
+// C-3: timing attack 방지용 더미 해시 (prefix 불일치 시 동일 응답 시간 보장)
+export const DUMMY_HASH = '$2a$10$dummyhashfortimingnormalization.dontusethisforreal';
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }

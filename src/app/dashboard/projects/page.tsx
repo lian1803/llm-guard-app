@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,59 +14,124 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 
-const mockProjects = [
-  {
-    id: 1,
-    name: 'Production API',
-    status: 'GUARDED',
-    budget: 1000,
-    used: 682,
-    requests: 15420,
-  },
-  {
-    id: 2,
-    name: 'Development',
-    status: 'WARNING',
-    budget: 200,
-    used: 168,
-    requests: 3210,
-  },
-  {
-    id: 3,
-    name: 'Staging',
-    status: 'GUARDED',
-    budget: 300,
-    used: 145,
-    requests: 2850,
-  },
-];
+interface Project {
+  id: string | number;
+  name: string;
+  status: string;
+  budget: number;
+  used: number;
+  requests: number;
+}
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState(mockProjects);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectBudget, setNewProjectBudget] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleCreateProject = () => {
-    if (newProjectName && newProjectBudget) {
-      const newProject = {
-        id: projects.length + 1,
+  // 초기 로드: 프로젝트 조회
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await fetch('/api/dashboard/projects');
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch projects');
+        }
+
+        const data = await response.json();
+        setProjects(data.data || []);
+      } catch (err) {
+        console.error('[Load Projects Error]', err);
+        setError(err instanceof Error ? err.message : 'Failed to load projects');
+        toast.error('Failed to load projects');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadProjects();
+  }, []);
+
+  const handleCreateProject = async () => {
+    if (!newProjectName || !newProjectBudget) {
+      toast.error('Please enter project name and budget');
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      const response = await fetch('/api/dashboard/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newProjectName,
+          budget: parseFloat(newProjectBudget),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.error?.message || 'Failed to create project');
+        return;
+      }
+
+      const newProject: Project = {
+        id: data.data.id,
         name: newProjectName,
         status: 'GUARDED',
-        budget: parseInt(newProjectBudget),
+        budget: parseFloat(newProjectBudget),
         used: 0,
         requests: 0,
       };
+
       setProjects([...projects, newProject]);
       setNewProjectName('');
       setNewProjectBudget('');
+      setIsDialogOpen(false);
+      toast.success('Project created successfully');
+    } catch (err) {
+      console.error('[Create Project Error]', err);
+      toast.error('Failed to create project');
+    } finally {
+      setIsCreating(false);
     }
   };
 
-  const updateProjectBudget = (id: number, newBudget: number) => {
-    setProjects(
-      projects.map((p) => (p.id === id ? { ...p, budget: newBudget } : p))
-    );
+  const handleUpdateProjectBudget = async (id: string | number, newBudget: number) => {
+    if (newBudget <= 0) {
+      toast.error('Budget must be greater than 0');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/dashboard/projects/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ budget: newBudget }),
+      });
+
+      if (!response.ok) {
+        toast.error('Failed to update budget');
+        return;
+      }
+
+      setProjects(
+        projects.map((p) => (p.id === id ? { ...p, budget: newBudget } : p))
+      );
+      toast.success('Budget updated');
+    } catch (err) {
+      console.error('[Update Budget Error]', err);
+      toast.error('Failed to update budget');
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -82,6 +147,45 @@ export default function ProjectsPage() {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="h-10 bg-[#30363d] rounded w-1/3" />
+          <div className="h-10 bg-[#30363d] rounded w-1/6" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i} className="bg-[#161b22] border-[#30363d]">
+              <CardContent className="pt-6">
+                <div className="h-8 bg-[#30363d] rounded mb-3" />
+                <div className="h-4 bg-[#30363d] rounded w-2/3" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card className="bg-[#161b22] border-[#ff4444]">
+          <CardContent className="pt-6">
+            <p className="text-[#ff4444] mb-4">{error}</p>
+            <Button
+              onClick={() => window.location.reload()}
+              className="bg-[#00ff88] text-[#0d1117] font-bold"
+            >
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -90,7 +194,7 @@ export default function ProjectsPage() {
           <h1 className="text-2xl font-bold mb-2">Projects</h1>
           <p className="text-[#8b949e]">Manage budgets and monitor costs per project</p>
         </div>
-        <Dialog>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger>
             <Button className="bg-[#00ff88] text-[#0d1117] font-bold">
               + New Project
@@ -110,6 +214,7 @@ export default function ProjectsPage() {
                   placeholder="e.g., My API"
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
+                  disabled={isCreating}
                   className="mt-2 bg-[#0d1117] border-[#30363d]"
                 />
               </div>
@@ -123,14 +228,16 @@ export default function ProjectsPage() {
                   placeholder="e.g., 500"
                   value={newProjectBudget}
                   onChange={(e) => setNewProjectBudget(e.target.value)}
+                  disabled={isCreating}
                   className="mt-2 bg-[#0d1117] border-[#30363d]"
                 />
               </div>
               <Button
                 onClick={handleCreateProject}
+                disabled={isCreating}
                 className="w-full bg-[#00ff88] text-[#0d1117] font-bold"
               >
-                Create Project
+                {isCreating ? 'Creating...' : 'Create Project'}
               </Button>
             </div>
           </DialogContent>
@@ -205,16 +312,20 @@ export default function ProjectsPage() {
                       <span className="text-sm text-[#8b949e]">Budget Used</span>
                       <div className="flex items-end gap-2">
                         <span
-                          className="font-mono text-lg font-bold"
+                          className="font-mono text-lg font-bold cursor-pointer hover:text-[#00ff88] transition-colors"
                           contentEditable
                           onBlur={(e) => {
-                            const newBudget = parseInt(
+                            const newBudget = parseFloat(
                               e.currentTarget.textContent || '0'
                             );
-                            if (newBudget > 0) {
-                              updateProjectBudget(project.id, newBudget);
+                            if (newBudget > 0 && newBudget !== project.budget) {
+                              handleUpdateProjectBudget(project.id, newBudget);
+                            } else {
+                              // 변경 없으면 원래 값으로 복원
+                              e.currentTarget.textContent = String(project.budget);
                             }
                           }}
+                          suppressContentEditableWarning
                         >
                           {project.budget}
                         </span>
