@@ -88,11 +88,11 @@ class D1Client {
       params: params.flat(), // Cloudflare D1은 params를 flatten해서 보냄
     });
 
-    if (!result.success || result.errors.length > 0) {
+    if (!result.success || (result.errors && result.errors.length > 0)) {
       throw new Error(`D1 Batch failed: ${JSON.stringify(result.errors)}`);
     }
 
-    return result.results.map((r) => {
+    return (result.result || []).map((r) => {
       if (!r.success) {
         throw new Error(`D1 Batch step failed: ${r.error}`);
       }
