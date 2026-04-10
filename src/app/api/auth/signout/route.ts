@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateRequestId } from '@/lib/utils';
 
+
 /**
  * POST /api/auth/signout — 로그아웃
  */

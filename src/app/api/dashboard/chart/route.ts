@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { generateRequestId } from '@/lib/utils';
+import { verifyAuth } from '@/lib/auth-middleware';
+import { d1QueryAll } from '@/lib/d1';
+
 
 // GET /api/dashboard/chart — 7일 일별 비용 데이터
 export async function GET(request: NextRequest) {
@@ -24,14 +26,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // JWT 인증 확인
+    const auth = await verifyAuth(request);
+    if (!auth) {
       return NextResponse.json(
         {
           error: {
@@ -45,14 +42,12 @@ export async function GET(request: NextRequest) {
     }
 
     // 프로젝트 소유권 확인
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
-      .select('id')
-      .eq('id', projectId)
-      .eq('user_id', user.id)
-      .single();
+    const projects = await d1QueryAll(
+      'SELECT id FROM projects WHERE id = ? AND user_id = ?',
+      [projectId, auth.userId]
+    );
 
-    if (projectError || !project) {
+    if (!projects || projects.length === 0) {
       return NextResponse.json(
         {
           error: {
@@ -70,24 +65,12 @@ export async function GET(request: NextRequest) {
     startDate.setDate(startDate.getDate() - days);
     const startDateStr = startDate.toISOString().split('T')[0];
 
-    const { data: logs, error: logsError } = await supabase
-      .from('usage_logs')
-      .select('called_at, cost_usd')
-      .eq('project_id', projectId)
-      .gte('called_at', startDateStr);
-
-    if (logsError) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'DATABASE_ERROR',
-            message: 'Failed to fetch usage logs',
-            requestId,
-          },
-        },
-        { status: 500 }
-      );
-    }
+    const logs = await d1QueryAll(
+      `SELECT called_at, cost_usd FROM usage_logs
+       WHERE project_id = ? AND called_at >= ?
+       ORDER BY called_at ASC`,
+      [projectId, startDateStr]
+    );
 
     // 일별 합계 계산
     const dailyData: { [date: string]: number } = {};
@@ -99,10 +82,12 @@ export async function GET(request: NextRequest) {
       dailyData[dateStr] = 0;
     }
 
-    logs?.forEach((log) => {
-      const dateStr = log.called_at.split('T')[0];
+    logs?.forEach((log: any) => {
+      const dateStr = typeof log.called_at === 'string'
+        ? log.called_at.split('T')[0]
+        : new Date(log.called_at).toISOString().split('T')[0];
       if (dailyData[dateStr] !== undefined) {
-        dailyData[dateStr] += parseFloat(log.cost_usd.toString());
+        dailyData[dateStr] += parseFloat(log.cost_usd?.toString() || '0');
       }
     });
 

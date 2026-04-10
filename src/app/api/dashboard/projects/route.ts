@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { generateRequestId } from '@/lib/utils';
+import { verifyAuth } from '@/lib/auth-middleware';
+import { d1QueryAll, d1Execute } from '@/lib/d1';
 import { z } from 'zod';
+
 
 const createProjectSchema = z.object({
   name: z.string().min(1).max(100),
@@ -15,14 +17,9 @@ export async function GET(request: NextRequest) {
   const requestId = generateRequestId();
 
   try {
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // JWT 인증 확인
+    const auth = await verifyAuth(request);
+    if (!auth) {
       return NextResponse.json(
         {
           error: {
@@ -35,24 +32,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { data: projects, error: fetchError } = await supabase
-      .from('projects')
-      .select('id, name, description, budget_usd, reset_day, is_active, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (fetchError) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'DATABASE_ERROR',
-            message: 'Failed to fetch projects',
-            requestId,
-          },
-        },
-        { status: 500 }
-      );
-    }
+    const projects = await d1QueryAll(
+      `SELECT id, name, description, budget_usd, reset_day, is_active, created_at
+       FROM projects
+       WHERE user_id = ?
+       ORDER BY created_at DESC`,
+      [auth.userId]
+    );
 
     return NextResponse.json({ data: projects }, { status: 200 });
   } catch (error) {
@@ -76,14 +62,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = createProjectSchema.parse(await request.json());
-    const supabase = await createClient();
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // JWT 인증 확인
+    const auth = await verifyAuth(request);
+    if (!auth) {
       return NextResponse.json(
         {
           error: {
@@ -97,31 +79,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 프로젝트 생성
-    const { data: project, error: insertError } = await supabase
-      .from('projects')
-      .insert({
-        user_id: user.id,
-        name: body.name,
-        description: body.description,
-        budget_usd: body.budget_usd,
-        reset_day: body.reset_day,
-        is_active: true,
-      })
-      .select()
-      .single();
+    const projectId = generateRequestId();
+    const now = new Date().toISOString();
 
-    if (insertError) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'DATABASE_ERROR',
-            message: 'Failed to create project',
-            requestId,
-          },
-        },
-        { status: 500 }
-      );
-    }
+    await d1Execute(
+      `INSERT INTO projects (id, user_id, name, description, budget_usd, reset_day, is_active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [projectId, auth.userId, body.name, body.description || null, body.budget_usd, body.reset_day, true, now]
+    );
 
     // 초기 budget 레코드 생성
     const periodStart = new Date();
@@ -130,19 +95,18 @@ export async function POST(request: NextRequest) {
       periodStart.setMonth(periodStart.getMonth() + 1);
     }
 
-    await supabase
-      .from('budgets')
-      .insert({
-        project_id: project.id,
-        user_id: user.id,
-        period_start: periodStart.toISOString().split('T')[0],
-        spent_usd: 0,
-        call_count: 0,
-        blocked_count: 0,
-      });
-    // 무시
+    const budgetId = generateRequestId();
+    const periodStartStr = periodStart.toISOString().split('T')[0];
 
-    return NextResponse.json({ data: project }, { status: 201 });
+    await d1Execute(
+      `INSERT INTO budgets (id, project_id, user_id, period_start, spent_usd, call_count, blocked_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [budgetId, projectId, auth.userId, periodStartStr, 0, 0, 0]
+    ).catch(() => {
+      // 무시
+    });
+
+    return NextResponse.json({ data: { id: projectId, user_id: auth.userId, name: body.name, description: body.description, budget_usd: body.budget_usd, reset_day: body.reset_day, is_active: true, created_at: now } }, { status: 201 });
   } catch (error) {
     console.error('[Projects POST Error]', error);
     return NextResponse.json(

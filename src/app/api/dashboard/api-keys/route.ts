@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { generateApiKey, hashApiKey, generateRequestId } from '@/lib/utils';
+import { verifyAuth } from '@/lib/auth-middleware';
+import { d1QueryAll, d1Execute } from '@/lib/d1';
 import { z } from 'zod';
 
+
 const createKeySchema = z.object({
-  project_id: z.string().uuid(),
+  project_id: z.string(),
   name: z.string().min(1).max(100),
 });
 
@@ -13,15 +15,9 @@ export async function GET(request: NextRequest) {
   const requestId = generateRequestId();
 
   try {
-    const supabase = await createClient();
-
-    // 인증 확인
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // JWT 인증 확인
+    const auth = await verifyAuth(request);
+    if (!auth) {
       return NextResponse.json(
         {
           error: {
@@ -35,24 +31,13 @@ export async function GET(request: NextRequest) {
     }
 
     // 내 API 키 조회
-    const { data: apiKeys, error: fetchError } = await supabase
-      .from('api_keys')
-      .select('id, project_id, name, key_prefix, last_used_at, is_active, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (fetchError) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'DATABASE_ERROR',
-            message: 'Failed to fetch API keys',
-            requestId,
-          },
-        },
-        { status: 500 }
-      );
-    }
+    const apiKeys = await d1QueryAll(
+      `SELECT id, project_id, name, key_prefix, last_used_at, is_active, created_at
+       FROM api_keys
+       WHERE user_id = ?
+       ORDER BY created_at DESC`,
+      [auth.userId]
+    );
 
     return NextResponse.json({ data: apiKeys }, { status: 200 });
   } catch (error) {
@@ -76,15 +61,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = createKeySchema.parse(await request.json());
-    const supabase = await createClient();
 
-    // 인증 확인
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // JWT 인증 확인
+    const auth = await verifyAuth(request);
+    if (!auth) {
       return NextResponse.json(
         {
           error: {
@@ -98,14 +78,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 프로젝트 소유권 확인
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
-      .select('id')
-      .eq('id', body.project_id)
-      .eq('user_id', user.id)
-      .single();
+    const project = await d1QueryAll(
+      'SELECT id FROM projects WHERE id = ? AND user_id = ?',
+      [body.project_id, auth.userId]
+    );
 
-    if (projectError || !project) {
+    if (!project || project.length === 0) {
       return NextResponse.json(
         {
           error: {
@@ -121,31 +99,15 @@ export async function POST(request: NextRequest) {
     // 새 API 키 생성
     const { key, prefix } = generateApiKey();
     const keyHash = await hashApiKey(key);
+    const keyId = generateRequestId();
+    const now = new Date().toISOString();
 
     // DB 저장
-    const { error: insertError } = await supabase
-      .from('api_keys')
-      .insert({
-        user_id: user.id,
-        project_id: body.project_id,
-        name: body.name,
-        key_hash: keyHash,
-        key_prefix: prefix,
-        is_active: true,
-      });
-
-    if (insertError) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'DATABASE_ERROR',
-            message: 'Failed to create API key',
-            requestId,
-          },
-        },
-        { status: 500 }
-      );
-    }
+    await d1Execute(
+      `INSERT INTO api_keys (id, user_id, project_id, name, key_hash, key_prefix, is_active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [keyId, auth.userId, body.project_id, body.name, keyHash, prefix, true, now]
+    );
 
     // 응답: 원본 키는 1회만 노출
     return NextResponse.json(

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { generateRequestId } from '@/lib/utils';
+import { verifyAuth } from '@/lib/auth-middleware';
+import { d1Execute } from '@/lib/d1';
+
 
 // DELETE /api/dashboard/api-keys/[id] — API 키 비활성화
 export async function DELETE(
@@ -11,15 +13,9 @@ export async function DELETE(
   const requestId = generateRequestId();
 
   try {
-    const supabase = await createClient();
-
-    // 인증 확인
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // JWT 인증 확인
+    const auth = await verifyAuth(request);
+    if (!auth) {
       return NextResponse.json(
         {
           error: {
@@ -33,24 +29,10 @@ export async function DELETE(
     }
 
     // 소유권 확인 후 비활성화
-    const { error: updateError } = await supabase
-      .from('api_keys')
-      .update({ is_active: false })
-      .eq('id', id)
-      .eq('user_id', user.id);
-
-    if (updateError) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'DATABASE_ERROR',
-            message: 'Failed to delete API key',
-            requestId,
-          },
-        },
-        { status: 500 }
-      );
-    }
+    await d1Execute(
+      'UPDATE api_keys SET is_active = false WHERE id = ? AND user_id = ?',
+      [id, auth.userId]
+    );
 
     return NextResponse.json({ data: { id } }, { status: 200 });
   } catch (error) {

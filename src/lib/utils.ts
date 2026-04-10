@@ -1,20 +1,19 @@
-import crypto from 'crypto';
-import bcrypt from 'bcryptjs';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-// C-3: timing attack 방지용 더미 해시 (prefix 불일치 시 동일 응답 시간 보장)
-export const DUMMY_HASH = '$2a$10$dummyhashfortimingnormalization.dontusethisforreal';
+// C-3: timing attack 방지용 더미 해시 (Web Crypto API 기반)
+export const DUMMY_HASH = 'pbkdf2:100000:' + 'a'.repeat(64) + ':' + 'a'.repeat(64);
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 /**
- * API Key 생성 (lg_ 접두어 포함)
+ * API Key 생성 (lg_ 접두어 포함 — Web Crypto API)
  */
 export function generateApiKey(): { key: string; prefix: string } {
-  const randomBytes = crypto.randomBytes(24).toString('hex');
+  const randomArray = crypto.getRandomValues(new Uint8Array(24));
+  const randomBytes = Array.from(randomArray).map(b => b.toString(16).padStart(2, '0')).join('');
   const key = `lg_${randomBytes}`;
   // 앞 8자만 노출 (lg_ + 8자)
   const prefix = key.substring(0, 13); // lg_ + 8자
@@ -23,25 +22,87 @@ export function generateApiKey(): { key: string; prefix: string } {
 }
 
 /**
- * API Key 해싱 (bcrypt)
+ * 비밀번호 해싱 (PBKDF2 — Web Crypto API)
+ */
+export async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    256
+  );
+  const hashArray = Array.from(new Uint8Array(bits));
+  const saltArray = Array.from(salt);
+  const saltHex = saltArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return `pbkdf2:100000:${saltHex}:${hashHex}`;
+}
+
+/**
+ * 비밀번호 검증 (PBKDF2 — Web Crypto API)
+ */
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  try {
+    const [algorithm, iterations, saltHex, storedHashHex] = stored.split(':');
+    if (algorithm !== 'pbkdf2' || !iterations || !saltHex || !storedHashHex) {
+      return false;
+    }
+
+    const salt = new Uint8Array(saltHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations: parseInt(iterations), hash: 'SHA-256' },
+      keyMaterial,
+      256
+    );
+    const newHashArray = Array.from(new Uint8Array(bits));
+    const newHashHex = newHashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return constantTimeCompare(newHashHex, storedHashHex);
+  } catch (error) {
+    console.error('[Auth] Password verification error:', error);
+    return false;
+  }
+}
+
+/**
+ * API Key 해싱 (PBKDF2 — Web Crypto API)
  */
 export async function hashApiKey(key: string): Promise<string> {
-  return bcrypt.hash(key, 10);
+  return hashPassword(key);
 }
 
 /**
  * API Key 검증 (상수 시간 비교)
  */
 export async function verifyApiKey(plain: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(plain, hash);
+  return verifyPassword(plain, hash);
 }
 
 /**
- * 요청 메시지 해시 (루프 감지용)
+ * 요청 메시지 해시 (루프 감지용 — Web Crypto API)
  */
-export function computeMessageHash(messages: unknown[]): string {
+export async function computeMessageHash(messages: unknown[]): Promise<string> {
   const content = JSON.stringify(messages);
-  return crypto.createHash('sha256').update(content).digest('hex');
+  const encoder = new TextEncoder();
+  const data = encoder.encode(content);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**

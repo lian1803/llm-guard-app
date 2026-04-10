@@ -1,12 +1,12 @@
 /**
  * 커스텀 인증 시스템 — D1 + JWT
  * Supabase Auth → 자체 구현으로 마이그레이션
+ * bcryptjs → Web Crypto API (Edge Runtime 호환)
  */
 
 import { SignJWT, jwtVerify } from 'jose';
-import bcrypt from 'bcryptjs';
 import { d1QueryOne, d1QueryAll, d1Execute } from './d1';
-import { generateRequestId } from './utils';
+import { generateRequestId, hashPassword, verifyPassword } from './utils';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'fallback-secret-key-change-in-production'
@@ -68,8 +68,8 @@ export async function signup(
     throw new Error('Email already registered');
   }
 
-  // 비밀번호 해싱
-  const hashedPassword = await bcrypt.hash(password, 10);
+  // 비밀번호 해싱 (Web Crypto API)
+  const hashedPassword = await hashPassword(password);
 
   // 사용자 생성
   const userId = generateRequestId();
@@ -132,8 +132,8 @@ export async function login(
     throw new Error('Invalid email or password');
   }
 
-  // 비밀번호 검증
-  const passwordValid = await bcrypt.compare(password, userRow.password);
+  // 비밀번호 검증 (Web Crypto API)
+  const passwordValid = await verifyPassword(password, userRow.password);
   if (!passwordValid) {
     throw new Error('Invalid email or password');
   }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { generateRequestId, getMonthPeriodStart } from '@/lib/utils';
+import { verifyAuth } from '@/lib/auth-middleware';
+import { d1QueryOne } from '@/lib/d1';
+
 
 // GET /api/dashboard/usage — 현재 월 누적 비용 + 예산 대비 %
 export async function GET(request: NextRequest) {
@@ -23,14 +25,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    // JWT 인증 확인
+    const auth = await verifyAuth(request);
+    if (!auth) {
       return NextResponse.json(
         {
           error: {
@@ -44,14 +41,12 @@ export async function GET(request: NextRequest) {
     }
 
     // 프로젝트 조회 (소유권 확인)
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
-      .select('id, budget_usd, reset_day')
-      .eq('id', projectId)
-      .eq('user_id', user.id)
-      .single();
+    const project = await d1QueryOne<{ id: string; budget_usd: number; reset_day: number }>(
+      'SELECT id, budget_usd, reset_day FROM projects WHERE id = ? AND user_id = ?',
+      [projectId, auth.userId]
+    );
 
-    if (projectError || !project) {
+    if (!project) {
       return NextResponse.json(
         {
           error: {
@@ -68,12 +63,11 @@ export async function GET(request: NextRequest) {
     const periodStart = getMonthPeriodStart(project.reset_day);
     const periodStartStr = periodStart.toISOString().split('T')[0];
 
-    const { data: budget } = await supabase
-      .from('budgets')
-      .select('spent_usd, call_count, blocked_count')
-      .eq('project_id', projectId)
-      .eq('period_start', periodStartStr)
-      .single();
+    const budget = await d1QueryOne<{ spent_usd: number; call_count: number; blocked_count: number }>(
+      `SELECT spent_usd, call_count, blocked_count FROM budgets
+       WHERE project_id = ? AND period_start = ?`,
+      [projectId, periodStartStr]
+    );
 
     const spentUsd = budget?.spent_usd ?? 0;
     const percentage = (spentUsd / project.budget_usd) * 100;
