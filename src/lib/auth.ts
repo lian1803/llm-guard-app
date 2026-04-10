@@ -22,6 +22,8 @@ export interface User {
   plan: 'free' | 'pro' | 'team';
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  google_id?: string | null;
+  avatar_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -97,7 +99,7 @@ export async function signup(
 
   // 사용자 조회
   const user = await d1QueryOne<User>(
-    'SELECT id, email, plan, stripe_customer_id, stripe_subscription_id, created_at, updated_at FROM users WHERE id = ?',
+    'SELECT id, email, plan, stripe_customer_id, stripe_subscription_id, google_id, avatar_url, created_at, updated_at FROM users WHERE id = ?',
     [userId]
   );
 
@@ -197,7 +199,7 @@ export function extractJWT(authHeader: string | null): string | null {
  */
 export async function getUserById(userId: string): Promise<User | null> {
   return d1QueryOne<User>(
-    'SELECT id, email, plan, stripe_customer_id, stripe_subscription_id, created_at, updated_at FROM users WHERE id = ?',
+    'SELECT id, email, plan, stripe_customer_id, stripe_subscription_id, google_id, avatar_url, created_at, updated_at FROM users WHERE id = ?',
     [userId]
   );
 }
@@ -207,8 +209,18 @@ export async function getUserById(userId: string): Promise<User | null> {
  */
 export async function getUserByEmail(email: string): Promise<User | null> {
   return d1QueryOne<User>(
-    'SELECT id, email, plan, stripe_customer_id, stripe_subscription_id, created_at, updated_at FROM users WHERE email = ?',
+    'SELECT id, email, plan, stripe_customer_id, stripe_subscription_id, google_id, avatar_url, created_at, updated_at FROM users WHERE email = ?',
     [email]
+  );
+}
+
+/**
+ * 사용자 Google ID로 사용자 조회
+ */
+export async function getUserByGoogleId(googleId: string): Promise<User | null> {
+  return d1QueryOne<User>(
+    'SELECT id, email, plan, stripe_customer_id, stripe_subscription_id, google_id, avatar_url, created_at, updated_at FROM users WHERE google_id = ?',
+    [googleId]
   );
 }
 

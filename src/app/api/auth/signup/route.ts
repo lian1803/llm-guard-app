@@ -53,11 +53,11 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
 
-    // HttpOnly 쿠키로 토큰 설정 (CSRF 방지)
+    // HttpOnly 쿠키로 토큰 설정 (OAuth 리다이렉트 호환성을 위해 lax 사용)
     response.cookies.set('auth_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60, // 7 days
       path: '/',
     });
