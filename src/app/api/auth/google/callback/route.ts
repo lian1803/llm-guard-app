@@ -90,11 +90,11 @@ export async function GET(request: NextRequest) {
         [googleUser.id, googleUser.picture, now, user.id]
       );
     } else {
-      // 신규 사용자 생성
+      // 신규 사용자 생성 (password = '' — Google OAuth 전용)
       const userId = generateRequestId();
       await d1Execute(
-        `INSERT INTO users (id, email, google_id, avatar_url, plan, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'free', ?, ?)`,
+        `INSERT INTO users (id, email, password, google_id, avatar_url, plan, created_at, updated_at)
+         VALUES (?, ?, '', ?, ?, 'free', ?, ?)`,
         [userId, googleUser.email, googleUser.id, googleUser.picture, now, now]
       );
 
