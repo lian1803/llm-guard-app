@@ -65,16 +65,16 @@ class D1Client {
   async query<T = any>(sql: string, params?: unknown[]): Promise<T[]> {
     const result = await this.request({ sql, params });
 
-    if (!result.success || result.errors.length > 0) {
+    if (!result.success || (result.errors && result.errors.length > 0)) {
       throw new Error(`D1 Query failed: ${JSON.stringify(result.errors)}`);
     }
 
-    if (result.results.length === 0 || !result.results[0].success) {
-      const err = result.results[0]?.error || 'Unknown error';
+    if (!result.result || result.result.length === 0 || !result.result[0].success) {
+      const err = result.result?.[0]?.error || 'Unknown error';
       throw new Error(`D1 Query execution failed: ${err}`);
     }
 
-    return (result.results[0].results || []) as T[];
+    return (result.result[0].results || []) as T[];
   }
 
   /**
