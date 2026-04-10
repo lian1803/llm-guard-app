@@ -12,7 +12,7 @@ interface D1QueryRequest {
 interface D1QueryResult {
   success: boolean;
   errors: { message: string }[];
-  results: Array<{
+  result: Array<{
     success: boolean;
     error?: string;
     results?: unknown[];
