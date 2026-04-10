@@ -14,7 +14,7 @@ const HeroScene = dynamic(() => import('@/components/landing/hero-scene').then(m
     <div className="w-full h-screen bg-gradient-to-b from-[#0d1117] to-[#161b22] flex items-center justify-center">
       <div className="text-center">
         <div className="w-12 h-12 border-2 border-[#00ff88]/30 border-t-[#00ff88] rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-[#8b949e]">Loading scene...</p>
+        <p className="text-[#8b949e]">Initializing scene...</p>
       </div>
     </div>
   ),

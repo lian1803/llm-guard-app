@@ -1,16 +1,68 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Menu, X } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/dashboard/api-keys', {
+          credentials: 'include',
+        });
+
+        if (response.status === 401) {
+          setIsAuthenticated(false);
+          router.push('/auth/login');
+          return;
+        }
+
+        if (!response.ok) {
+          setIsAuthenticated(false);
+          router.push('/auth/login');
+          return;
+        }
+
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.error('[Auth Check Error]', error);
+        setIsAuthenticated(false);
+        router.push('/auth/login');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#0d1117]">
+        <div className="text-center">
+          <div className="w-12 h-12 border-2 border-[#00ff88]/30 border-t-[#00ff88] rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-[#8b949e]">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   const navItems = [
     { href: '/dashboard', label: 'Overview', icon: '📊' },

@@ -57,8 +57,8 @@ export default function DashboardPage() {
 
         // 병렬로 두 API 호출
         const [usageRes, chartRes] = await Promise.all([
-          fetch('/api/dashboard/usage'),
-          fetch('/api/dashboard/chart'),
+          fetch('/api/dashboard/usage', { credentials: 'include' }),
+          fetch('/api/dashboard/chart', { credentials: 'include' }),
         ]);
 
         if (!usageRes.ok) {
