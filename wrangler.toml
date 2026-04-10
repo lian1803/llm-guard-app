@@ -16,9 +16,4 @@ database_id = "5f4dd95f-4991-4b53-8d3a-05726c01e505"
 binding = "KV"
 id = "29e4da4f4e9146c38787398ac699d221"
 
-# Environment Variables
-[env.production]
 vars = { ENVIRONMENT = "production" }
-
-[env.development]
-vars = { ENVIRONMENT = "development" }
