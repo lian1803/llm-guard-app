@@ -46,52 +46,60 @@ jobs:
           path: e2e/results.json
           retention-days: 30
 
-      - name: Create GitHub Issue on failure
+      - name: Parse test results
+        if: steps.playwright.outcome == 'failure'
+        id: parse
+        run: |
+          if [ -f e2e/results.json ]; then
+            TOTAL=$(jq '.stats.expected // 0' e2e/results.json)
+            FAILED=$(jq '.stats.unexpected // 0' e2e/results.json)
+            FAILED_NAMES=$(jq -r '
+              [.suites[].specs[] |
+               select(.tests[].results[].status == "failed") |
+               "- ❌ \(.title)"] | join("\n")
+            ' e2e/results.json 2>/dev/null || echo "- (파싱 실패)")
+            echo "total=$TOTAL" >> $GITHUB_OUTPUT
+            echo "failed=$FAILED" >> $GITHUB_OUTPUT
+            # 멀티라인 output
+            {
+              echo "failed_names<<EOF"
+              echo "$FAILED_NAMES"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            echo "total=0" >> $GITHUB_OUTPUT
+            echo "failed=unknown" >> $GITHUB_OUTPUT
+            echo "failed_names=- (결과 파일 없음)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create or update GitHub Issue on failure
         if: steps.playwright.outcome == 'failure'
         uses: actions/github-script@v7
+        env:
+          TOTAL: ${{ steps.parse.outputs.total }}
+          FAILED: ${{ steps.parse.outputs.failed }}
+          FAILED_NAMES: ${{ steps.parse.outputs.failed_names }}
+          MONITOR_URL: ${{ github.event.inputs.url || 'https://llm-guard-app.lian1803.workers.dev' }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            let summary = '테스트 결과를 파싱할 수 없습니다.';
-            let failedTests = [];
-
-            try {
-              const raw = fs.readFileSync('e2e/results.json', 'utf8');
-              const results = JSON.parse(raw);
-              const suites = results.suites || [];
-
-              for (const suite of suites) {
-                for (const spec of (suite.specs || [])) {
-                  for (const test of (spec.tests || [])) {
-                    const failed = test.results?.some(r => r.status === 'failed');
-                    if (failed) {
-                      const errMsg = test.results?.find(r => r.status === 'failed')?.error?.message || '';
-                      failedTests.push(`- ❌ **${spec.title}**\n  \`${errMsg.split('\n')[0]}\``);
-                    }
-                  }
-                }
-              }
-
-              const total = results.stats?.expected || 0;
-              const failed = results.stats?.unexpected || 0;
-              summary = `전체 ${total}개 중 **${failed}개 실패**`;
-            } catch (e) {
-              summary = '결과 파일 읽기 오류: ' + e.message;
-            }
-
+            const total = process.env.TOTAL;
+            const failed = process.env.FAILED;
+            const failedNames = process.env.FAILED_NAMES;
+            const monitorUrl = process.env.MONITOR_URL;
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
+            const summary = `전체 ${total}개 중 **${failed}개 실패**`;
             const body = [
               `## 🚨 사이트 모니터링 실패`,
               ``,
               `**감지 시각:** ${now} UTC`,
-              `**대상 URL:** https://llm-guard-app.lian1803.workers.dev`,
+              `**대상 URL:** ${monitorUrl}`,
               `**결과:** ${summary}`,
               ``,
               `### 실패한 테스트`,
-              failedTests.length > 0 ? failedTests.join('\n') : '- (상세 파싱 실패)',
+              failedNames,
               ``,
               `### 링크`,
               `- [GitHub Actions 실행 로그](${runUrl})`,
@@ -99,7 +107,7 @@ jobs:
               `> 자동 생성된 이슈입니다. 수동으로 닫아주세요.`,
             ].join('\n');
 
-            // 같은 제목의 열린 이슈가 있으면 중복 생성 방지
+            // 기존 열린 monitor 이슈가 있으면 코멘트 추가, 없으면 새 이슈
             const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -107,8 +115,15 @@ jobs:
               labels: 'monitor',
             });
 
-            const alreadyOpen = existing.data.some(i => i.title.includes('사이트 모니터링 실패'));
-            if (!alreadyOpen) {
+            const openIssue = existing.data.find(i => i.title.includes('사이트 모니터링 실패'));
+            if (openIssue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openIssue.number,
+                body: `### 재발 감지 (${now} UTC)\n\n${summary}\n\n${failedNames}\n\n[로그](${runUrl})`,
+              });
+            } else {
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -116,29 +131,7 @@ jobs:
                 body,
                 labels: ['monitor', 'bug'],
               });
-              console.log('Issue created');
-            } else {
-              // 기존 이슈에 코멘트 추가
-              const issue = existing.data.find(i => i.title.includes('사이트 모니터링 실패'));
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body: `### 재발 감지 (${now} UTC)\n\n${summary}\n\n${failedTests.join('\n')}\n\n[로그](${runUrl})`,
-              });
-              console.log('Comment added to existing issue');
             }
-
-      - name: Auto-fix trigger on failure
-        if: steps.playwright.outcome == 'failure'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            // 실패 시 Claude Code auto-fix를 트리거할 수 있는 워크플로우 dispatch
-            // 현재는 알림만. 추후 claude-code-action 연동 시 여기에 추가.
-            console.log('Monitor failed. Check the created issue for details.');
-            console.log('Consider running: claude --fix-pr or reviewing the failing tests manually.');
 
       - name: Report success
         if: steps.playwright.outcome == 'success'
