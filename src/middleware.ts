@@ -38,7 +38,18 @@ export async function middleware(request: NextRequest) {
 
   // API 경로 보호 (관리자 전용)
   if (pathname.startsWith('/api/dashboard')) {
-    const token = extractJWT(request.headers.get('authorization'));
+    // Authorization 헤더 OR HttpOnly 쿠키 (raw Cookie 헤더에서 파싱)
+    let token = extractJWT(request.headers.get('authorization'));
+    if (!token) {
+      const cookieHeader = request.headers.get('cookie') || '';
+      for (const part of cookieHeader.split(';')) {
+        const [name, ...rest] = part.trim().split('=');
+        if (name.trim() === 'auth_token') {
+          token = rest.join('=') || null;
+          break;
+        }
+      }
+    }
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
