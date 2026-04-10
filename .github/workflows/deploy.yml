@@ -29,8 +29,8 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           NEXT_PUBLIC_APP_URL: https://llm-guard-app.pages.dev
 
-      - name: Deploy to Cloudflare Pages
-        run: npx wrangler pages deploy .open-next/assets --project-name llm-guard-app --branch main
+      - name: Deploy to Cloudflare Workers
+        run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
