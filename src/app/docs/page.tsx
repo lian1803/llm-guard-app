@@ -86,7 +86,7 @@ if check['allowed']:
         is_blocked=False
     )
 else:
-    print(f"Budget exceeded. Remaining: ${check['remaining_usd']}")`,
+    print(f"Budget exceeded. Remaining: \${check['remaining_usd']}")`,
     },
   };
 
