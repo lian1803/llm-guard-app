@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
             code: 'INVALID_REQUEST',
             message:
               error instanceof z.ZodError
-                ? error.errors[0].message
+                ? error.issues[0].message
                 : 'Invalid request body',
             requestId,
           },
